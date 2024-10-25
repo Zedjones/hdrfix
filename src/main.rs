@@ -13,14 +13,14 @@ use std::time::Duration;
 use glam::f32::{Mat3, Vec3};
 
 // CLI bits
-use clap::{Arg, App, ArgMatches};
+use clap::{App, Arg, ArgMatches};
 use time::OffsetDateTime;
 
 // Parallelism bits
 use rayon::prelude::*;
 
 // Directory watch bits
-use notify::{DebouncedEvent, RecursiveMode, RecommendedWatcher, Watcher};
+use notify::{DebouncedEvent, RecommendedWatcher, RecursiveMode, Watcher};
 
 // Error bits
 use thiserror::Error;
@@ -28,7 +28,7 @@ use thiserror::Error;
 type Result<T> = std::result::Result<T, LocalError>;
 
 // Color fun
-use oklab::{Oklab, linear_srgb_to_oklab, oklab_to_linear_srgb};
+use oklab::{linear_srgb_to_oklab, oklab_to_linear_srgb, Oklab};
 
 // 16-bit floats
 use half::prelude::*;
@@ -71,7 +71,7 @@ struct PixelBuffer {
     width: usize,
     height: usize,
     bytes_per_pixel: usize,
-    data: Vec::<u8>,
+    data: Vec<u8>,
 
     // If we wanted these could be traits
     // but we don't need that level of complexity
@@ -94,7 +94,7 @@ impl PixelBuffer {
             HDR10bit => read_rec2100_rgb32101010,
             HDR16bit => read_rec2100_rgb48,
             HDRFloat16 => read_scrgb_rgb64half,
-            HDRFloat32 => read_scrgb_rgb128float
+            HDRFloat32 => read_scrgb_rgb128float,
         };
         let write_rgb_func = match format {
             SDR8bit => write_srgb_rgb24,
@@ -102,7 +102,7 @@ impl PixelBuffer {
             HDR10bit => write_rec2100_rgb32101010,
             HDR16bit => write_rec2100_rgb48,
             HDRFloat16 => write_scrgb_rgb64half,
-            HDRFloat32 => write_scrgb_rgb128float
+            HDRFloat32 => write_scrgb_rgb128float,
         };
         let stride = width * bytes_per_pixel;
         let size = stride * height;
@@ -114,7 +114,7 @@ impl PixelBuffer {
             bytes_per_pixel,
             data,
             read_rgb_func,
-            write_rgb_func
+            write_rgb_func,
         }
     }
 
@@ -122,7 +122,7 @@ impl PixelBuffer {
         &self.data
     }
 
-    fn bytes_mut(&mut self) -> &mut[u8] {
+    fn bytes_mut(&mut self) -> &mut [u8] {
         &mut self.data
     }
 
@@ -134,13 +134,13 @@ impl PixelBuffer {
         self.data.par_chunks_mut(self.bytes_per_pixel)
     }
 
-    fn pixels(&self) -> impl '_ + IndexedParallelIterator<Item = Vec3>
-    {
+    fn pixels(&self) -> impl '_ + IndexedParallelIterator<Item = Vec3> {
         self.par_iter().map(self.read_rgb_func)
     }
 
     fn fill<T>(&mut self, source: T)
-    where T: IndexedParallelIterator<Item = Vec3>
+    where
+        T: IndexedParallelIterator<Item = Vec3>,
     {
         let write_rgb_func = self.write_rgb_func;
         self.par_iter_mut()
@@ -153,8 +153,7 @@ fn read_srgb_rgb24(_data: &[u8]) -> Vec3 {
     panic!("not yet implemented");
 }
 
-fn write_srgb_rgb24(data: &mut [u8], val: Vec3)
-{
+fn write_srgb_rgb24(data: &mut [u8], val: Vec3) {
     let gamma_out = linear_to_srgb(val);
     let clipped = clip(gamma_out);
     let scaled = clipped * 255.0;
@@ -234,7 +233,7 @@ fn write_scrgb_rgb128float(data: &mut [u8], rgb: Vec3) {
 
 fn read_rec2100_rgb32101010(data: &[u8]) -> Vec3 {
     let data = u32::from_le_bytes([data[0], data[1], data[2], data[3]]);
-    let b = (data >>  0) & 0x03ff;
+    let b = (data >> 0) & 0x03ff;
     let g = (data >> 10) & 0x03ff;
     let r = (data >> 20) & 0x03ff;
     let max = 1023.0f32;
@@ -277,7 +276,8 @@ enum LocalError {
 use LocalError::*;
 
 fn time_func<F, G>(msg: &str, func: F) -> Result<G>
-    where F: FnOnce() -> Result<G>
+where
+    F: FnOnce() -> Result<G>,
 {
     let start = OffsetDateTime::now_utc();
     let result = func()?;
@@ -288,9 +288,7 @@ fn time_func<F, G>(msg: &str, func: F) -> Result<G>
 
 // Read an input PNG and return its size and contents
 // It must be a certain format (8bpp true color no alpha)
-fn read_png(filename: &Path)
-    -> Result<PixelBuffer>
-{
+fn read_png(filename: &Path) -> Result<PixelBuffer> {
     use png::Decoder;
     use png::Transformations;
 
@@ -308,19 +306,13 @@ fn read_png(filename: &Path)
         }
     };
 
-    let mut buffer = PixelBuffer::new(
-        info.width as usize,
-        info.height as usize,
-        format
-    );
+    let mut buffer = PixelBuffer::new(info.width as usize, info.height as usize, format);
     reader.next_frame(buffer.bytes_mut())?;
 
     Ok(buffer)
 }
 
-fn read_jxr(filename: &Path)
-  -> Result<PixelBuffer>
-{
+fn read_jxr(filename: &Path) -> Result<PixelBuffer> {
     use jpegxr::ImageDecode;
     use jpegxr::PixelFormat::*;
     use jpegxr::Rect;
@@ -331,15 +323,9 @@ fn read_jxr(filename: &Path)
     let (width, height) = decoder.get_size()?;
     let format = decoder.get_pixel_format()?;
     let (bytes_per_pixel, buf_fmt) = match format {
-        PixelFormat128bppRGBAFloat => {
-            (16, HDRFloat32)
-        },
-        PixelFormat64bppRGBAHalf => {
-            (8, HDRFloat16)
-        },
-        PixelFormat32bppRGB101010 => {
-            (4, HDR10bit)
-        }
+        PixelFormat128bppRGBAFloat => (16, HDRFloat32),
+        PixelFormat64bppRGBAHalf => (8, HDRFloat16),
+        PixelFormat32bppRGB101010 => (4, HDR10bit),
         _ => {
             println!("Pixel format: {:?}", format);
             return Err(UnsupportedPixelFormat);
@@ -347,11 +333,7 @@ fn read_jxr(filename: &Path)
     };
 
     let stride = width as usize * bytes_per_pixel;
-    let mut buffer = PixelBuffer::new(
-        width as usize,
-        height as usize,
-        buf_fmt
-    );
+    let mut buffer = PixelBuffer::new(width as usize, height as usize, buf_fmt);
 
     let rect = Rect::new(0, 0, width, height);
     decoder.copy(&rect, buffer.bytes_mut(), stride)?;
@@ -367,16 +349,12 @@ fn pq_to_linear(val: Vec3) -> Vec3 {
     let c2 = Vec3::splat(18.851563);
     let c3 = Vec3::splat(18.6875);
     let val_powered = val.powf(inv_m2);
-    (Vec3::max(val_powered - c1, Vec3::ZERO)
-        / (c2 - c3 * val_powered)
-    ).powf(inv_m1)
+    (Vec3::max(val_powered - c1, Vec3::ZERO) / (c2 - c3 * val_powered)).powf(inv_m1)
 }
 
 fn rec2100_to_scrgb(val: Vec3) -> Vec3 {
     let matrix = Mat3::from_cols_array(&[
-        1.6605, -0.1246, -0.0182,
-        -0.5876, 1.1329, -0.1006,
-        -0.0728, -0.0083, 1.1187
+        1.6605, -0.1246, -0.0182, -0.5876, 1.1329, -0.1006, -0.0728, -0.0083, 1.1187,
     ]);
     let scale = REC2100_MAX / SDR_WHITE;
     matrix.mul_vec3(val * scale)
@@ -445,8 +423,7 @@ fn oklab_l_for_luma(luma: f32) -> f32 {
     gray_oklab.l
 }
 
-fn scale_oklab_desat(oklab_in: Oklab, luma_out: f32, saturation: f32) -> Oklab
-{
+fn scale_oklab_desat(oklab_in: Oklab, luma_out: f32, saturation: f32) -> Oklab {
     let l_in = oklab_in.l;
     if l_in == 0.0 {
         oklab_in
@@ -465,8 +442,7 @@ fn scale_oklab_desat(oklab_in: Oklab, luma_out: f32, saturation: f32) -> Oklab
     }
 }
 
-fn scale_oklab(oklab_in: Oklab, luma_out: f32) -> Oklab
-{
+fn scale_oklab(oklab_in: Oklab, luma_out: f32) -> Oklab {
     if oklab_in.l == 0.0 {
         oklab_in
     } else {
@@ -484,13 +460,11 @@ fn clip(input: Vec3) -> Vec3 {
     input.max(Vec3::ZERO).min(Vec3::ONE)
 }
 
-fn color_clip(input: Vec3) -> Vec3
-{
+fn color_clip(input: Vec3) -> Vec3 {
     clip(input)
 }
 
-fn darken_oklab(c_in: Oklab, brightness: f32) -> Vec3
-{
+fn darken_oklab(c_in: Oklab, brightness: f32) -> Vec3 {
     let c_out = Oklab {
         l: c_in.l * brightness,
         a: c_in.a * brightness,
@@ -499,8 +473,7 @@ fn darken_oklab(c_in: Oklab, brightness: f32) -> Vec3
     oklab_to_scrgb(c_out)
 }
 
-fn desat_oklab(c_in: Oklab, saturation: f32) -> Vec3
-{
+fn desat_oklab(c_in: Oklab, saturation: f32) -> Vec3 {
     let c_out = Oklab {
         l: c_in.l,
         a: c_in.a * saturation,
@@ -523,10 +496,11 @@ fn close_enough(a: f32, b: f32) -> Ordering {
 }
 
 fn binary_search<I, O, F, G>(input: I, min: f32, max: f32, func: F, comparator: G) -> O
-where I: Copy + Clone,
+where
+    I: Copy + Clone,
     O: Copy + Clone,
     F: Fn(I, f32) -> O,
-    G: Fn(O) -> Ordering
+    G: Fn(O) -> Ordering,
 {
     let mid = (min + max) / 2.0;
     let result = func(input, mid);
@@ -536,12 +510,11 @@ where I: Copy + Clone,
             Ordering::Less => binary_search(input, mid, max, func, comparator),
             Ordering::Greater => binary_search(input, min, mid, func, comparator),
             Ordering::Equal => result,
-        }
+        },
     }
 }
 
-fn color_darken_oklab(c_in: Vec3) -> Vec3
-{
+fn color_darken_oklab(c_in: Vec3) -> Vec3 {
     let max = c_in.max_element();
     if max > 1.0 {
         let c_in_oklab = scrgb_to_oklab(c_in);
@@ -554,8 +527,7 @@ fn color_darken_oklab(c_in: Vec3) -> Vec3
     }
 }
 
-fn color_desat_oklab(c_in: Vec3) -> Vec3
-{
+fn color_desat_oklab(c_in: Vec3) -> Vec3 {
     let max = c_in.max_element();
     if max > 1.0 {
         let c_in_oklab = scrgb_to_oklab(c_in);
@@ -580,19 +552,17 @@ fn scale_rgb(val: Vec3, luma_out: f32) -> Vec3 {
 
 // https://64.github.io/tonemapping/#uncharted-2
 // Uncharted 2 / Hable Filmic
-fn uncharted2_tonemap_partial(x: f32) -> f32
-{
+fn uncharted2_tonemap_partial(x: f32) -> f32 {
     const A: f32 = 0.15;
     const B: f32 = 0.50;
     const C: f32 = 0.10;
     const D: f32 = 0.20;
     const E: f32 = 0.02;
     const F: f32 = 0.30;
-    ((x*(A*x+(C*B))+(D*E))/(x*(A*x+(B))+(D*F)))-(E/F)
+    ((x * (A * x + (C * B)) + (D * E)) / (x * (A * x + (B)) + (D * F))) - (E / F)
 }
 
-fn tonemap_uncharted2(v: Vec3, _options: &Options) -> Vec3
-{
+fn tonemap_uncharted2(v: Vec3, _options: &Options) -> Vec3 {
     let exposure_bias: f32 = 2.0;
     let luma = luma_rgb(v);
     let curr = uncharted2_tonemap_partial(luma * exposure_bias);
@@ -604,15 +574,14 @@ fn tonemap_uncharted2(v: Vec3, _options: &Options) -> Vec3
     scale_rgb(v, luma_out)
 }
 
-fn tonemap_hable(val: Vec3, _options: &Options) -> Vec3
-{
+fn tonemap_hable(val: Vec3, _options: &Options) -> Vec3 {
     // stolen from ffmpeg's vf_tonemap
 
     // desat
     let luma = luma_rgb(val);
     let desaturation: f32 = 2.0;
     let epsilon: f32 = 1e-6;
-    let overbright = f32::max(luma - desaturation, epsilon ) / f32::max(luma, epsilon);
+    let overbright = f32::max(luma - desaturation, epsilon) / f32::max(luma, epsilon);
     let rgb_out = val * (1.0 - overbright) + luma * overbright;
     let sig_orig = f32::max(rgb_out.max_element(), epsilon);
 
@@ -632,31 +601,27 @@ type Matrix3x3 = [[f32; 3]; 3];
 
 // https://64.github.io/tonemapping/#aces
 // ACES (Academy Color Encoding System)
-const ACES_INPUT_MATRIX: Matrix3x3 =
-[
+const ACES_INPUT_MATRIX: Matrix3x3 = [
     [0.59719, 0.35458, 0.04823],
     [0.07600, 0.90834, 0.01566],
-    [0.02840, 0.13383, 0.83777]
+    [0.02840, 0.13383, 0.83777],
 ];
 
-const ACES_OUTPUT_MATRIX: Matrix3x3 =
-[
-    [ 1.60475, -0.53108, -0.07367],
-    [-0.10208,  1.10813, -0.00605],
-    [-0.00327, -0.07276,  1.07602]
+const ACES_OUTPUT_MATRIX: Matrix3x3 = [
+    [1.60475, -0.53108, -0.07367],
+    [-0.10208, 1.10813, -0.00605],
+    [-0.00327, -0.07276, 1.07602],
 ];
 
 #[allow(clippy::many_single_char_names)]
-fn aces_mul(m: &Matrix3x3, v: Vec3) -> Vec3
-{
+fn aces_mul(m: &Matrix3x3, v: Vec3) -> Vec3 {
     let x = m[0][0] * v[0] + m[0][1] * v[1] + m[0][2] * v[2];
     let y = m[1][0] * v[1] + m[1][1] * v[1] + m[1][2] * v[2];
     let z = m[2][0] * v[1] + m[2][1] * v[1] + m[2][2] * v[2];
     Vec3::new(x, y, z)
 }
 
-fn aces_rtt_and_odt_fit(v: Vec3) -> Vec3
-{
+fn aces_rtt_and_odt_fit(v: Vec3) -> Vec3 {
     let a = v * (v + Vec3::splat(0.0245786)) - Vec3::splat(0.000090537);
     let b = v * (Vec3::splat(0.983729) * v + Vec3::splat(0.432951)) + Vec3::splat(0.238081);
     a / b
@@ -690,24 +655,20 @@ fn linear_to_srgb(val: Vec3) -> Vec3 {
 const REC2100_MAX: f32 = 10000.0; // the 1.0 value for BT.2100 linear
 const SDR_WHITE: f32 = 80.0;
 
-fn exposure_scale(stops: f32) -> f32
-{
+fn exposure_scale(stops: f32) -> f32 {
     2.0_f32.powf(stops)
 }
 
-fn hdr_to_sdr_pixel(rgb_scrgb: Vec3, options: &Options) -> Vec3
-{
+fn hdr_to_sdr_pixel(rgb_scrgb: Vec3, options: &Options) -> Vec3 {
     let val = rgb_scrgb * options.scale;
     let val = (options.tone_map)(val, options);
     (options.color_map)(val)
 }
 
-fn write_png(filename: &Path, data: &PixelBuffer)
-   -> Result<()>
-{
-    use mtpng::{CompressionLevel, Header};
+fn write_png(filename: &Path, data: &PixelBuffer) -> Result<()> {
     use mtpng::encoder::{Encoder, Options};
     use mtpng::ColorType;
+    use mtpng::{CompressionLevel, Header};
 
     let writer = File::create(filename)?;
 
@@ -727,29 +688,6 @@ fn write_png(filename: &Path, data: &PixelBuffer)
     Ok(())
 }
 
-
-fn write_jpeg(filename: &Path, data: &PixelBuffer)
-   -> Result<()>
-{
-    // @todo allow setting jpeg quality
-    // mozjpeg is much faster than image crate's encoder
-    std::panic::catch_unwind(|| {
-        use mozjpeg::{Compress, ColorSpace};
-        let mut c = Compress::new(ColorSpace::JCS_EXT_RGB);
-        c.set_size(data.width, data.height);
-        c.set_quality(95.0);
-        c.set_mem_dest(); // can't write direct to file?
-        c.start_compress();
-        if !c.write_scanlines(data.bytes()) {
-            panic!("error writing scanlines");
-        }
-        c.finish_compress();
-        let mut writer = File::create(filename).expect("error creating output file");
-        let data = c.data_as_mut_slice().expect("error accessing JPEG output buffer");
-        writer.write_all(data).expect("error writing output file");
-    }).map_err(|_| JpegWriteFailure)
-}
-
 struct Histogram {
     luma_vals: Vec<f32>,
 }
@@ -759,16 +697,15 @@ impl Histogram {
         // @todo maybe do a proper histogram with buckets
         // instead of sorting every pixel value
         let mut luma_vals = Vec::<f32>::new();
-        source.pixels().map(luma_scrgb).collect_into_vec(&mut luma_vals);
-        luma_vals.par_sort_unstable_by(|a, b| {
-            match a.partial_cmp(b) {
-                Some(ordering) => ordering,
-                None => Ordering::Equal,
-            }
+        source
+            .pixels()
+            .map(luma_scrgb)
+            .collect_into_vec(&mut luma_vals);
+        luma_vals.par_sort_unstable_by(|a, b| match a.partial_cmp(b) {
+            Some(ordering) => ordering,
+            None => Ordering::Equal,
         });
-        Self {
-            luma_vals
-        }
+        Self { luma_vals }
     }
 
     fn percentile(&self, target: f32) -> f32 {
@@ -779,13 +716,16 @@ impl Histogram {
 
     fn average_below_percentile(&self, percent: f32) -> f32 {
         let max = self.percentile(percent);
-        let (sum, count) = self.luma_vals.iter().fold((0.0f32, 0usize), |(sum, count), luma| {
-            if *luma > max {
-                (sum, count)
-            } else {
-                (sum + luma, count + 1)
-            }
-        });
+        let (sum, count) = self
+            .luma_vals
+            .iter()
+            .fold((0.0f32, 0usize), |(sum, count), luma| {
+                if *luma > max {
+                    (sum, count)
+                } else {
+                    (sum + luma, count + 1)
+                }
+            });
         sum / count as f32
     }
 }
@@ -816,16 +756,22 @@ fn apply_levels(c_in: Vec3, level_min: f32, level_max: f32, gamma: f32) -> Vec3 
     oklab_to_scrgb(oklab_out)
 }
 
-struct Lazy<T, F> where F: (FnOnce() -> T) {
+struct Lazy<T, F>
+where
+    F: (FnOnce() -> T),
+{
     value: Option<T>,
     func: Option<F>,
 }
 
-impl<T,F> Lazy<T,F> where F: (FnOnce() -> T) {
+impl<T, F> Lazy<T, F>
+where
+    F: (FnOnce() -> T),
+{
     fn new(func: F) -> Self {
         Lazy {
             value: None,
-            func: Some(func)
+            func: Some(func),
         }
     }
 
@@ -838,7 +784,10 @@ impl<T,F> Lazy<T,F> where F: (FnOnce() -> T) {
     }
 }
 
-impl<F> Lazy<Histogram,F> where F: (FnOnce() -> Histogram) {
+impl<F> Lazy<Histogram, F>
+where
+    F: (FnOnce() -> Histogram),
+{
     fn level(&mut self, level: Level) -> f32 {
         match level {
             Level::Scalar(val) => val,
@@ -851,16 +800,19 @@ fn extension(input_filename: &Path) -> &str {
     input_filename.extension().unwrap().to_str().unwrap()
 }
 
-fn hdrfix(input_filename: &Path, output_filename: &Path, args: &ArgMatches) -> Result<()>
-{
-    println!("{} -> {}", input_filename.to_str().unwrap(), output_filename.to_str().unwrap());
+fn hdrfix(input_filename: &Path, output_filename: &Path, args: &ArgMatches) -> Result<()> {
+    println!(
+        "{} -> {}",
+        input_filename.to_str().unwrap(),
+        output_filename.to_str().unwrap()
+    );
 
     let source = time_func("read_input", || {
         let ext = extension(input_filename);
         match ext {
             "png" => read_png(input_filename),
             "jxr" => read_jxr(input_filename),
-            _ => Err(InvalidInputFile)
+            _ => Err(InvalidInputFile),
         }
     })?;
     let width = source.width as usize;
@@ -868,25 +820,32 @@ fn hdrfix(input_filename: &Path, output_filename: &Path, args: &ArgMatches) -> R
 
     let pre_gamma: f32 = args.value_of("pre-gamma").expect("pre-gamma arg").parse()?;
     let mut pre_histogram = Lazy::new(|| Histogram::new(&source));
-    let pre_levels_min = pre_histogram.level(Level::with_str(args.value_of("pre-levels-min").expect("pre-levels-min arg"))?);
-    let pre_levels_max = pre_histogram.level(Level::with_str(args.value_of("pre-levels-max").expect("pre-levels-max arg"))?);
+    let pre_levels_min = pre_histogram.level(Level::with_str(
+        args.value_of("pre-levels-min").expect("pre-levels-min arg"),
+    )?);
+    let pre_levels_max = pre_histogram.level(Level::with_str(
+        args.value_of("pre-levels-max").expect("pre-levels-max arg"),
+    )?);
     let source = {
         let mut dest = PixelBuffer::new(width, height, PixelFormat::HDRFloat32);
-        dest.fill(source.pixels().map(|rgb| apply_levels(rgb, pre_levels_min, pre_levels_max, pre_gamma)));
+        dest.fill(
+            source
+                .pixels()
+                .map(|rgb| apply_levels(rgb, pre_levels_min, pre_levels_max, pre_gamma)),
+        );
         dest
     };
 
-
-    let mut input_histogram = Lazy::new(|| time_func("input histogram", || {
-        Ok(Histogram::new(&source))
-    }).unwrap());
+    let mut input_histogram =
+        Lazy::new(|| time_func("input histogram", || Ok(Histogram::new(&source))).unwrap());
 
     let exposure = args.value_of("exposure").unwrap().parse::<f32>()?;
     let auto_exposure = Level::with_str(args.value_of("auto-exposure").unwrap())?;
-    let scale = exposure_scale(exposure) * 0.5 / match auto_exposure {
-        Level::Scalar(level) => level,
-        Level::Percentile(percent) => input_histogram.force().average_below_percentile(percent),
-    };
+    let scale = exposure_scale(exposure) * 0.5
+        / match auto_exposure {
+            Level::Scalar(level) => level,
+            Level::Percentile(percent) => input_histogram.force().average_below_percentile(percent),
+        };
 
     let hdr_max = match Level::with_str(args.value_of("hdr-max").unwrap())? {
         // hdr_max input is in nits if scalar, so scale it to scrgb
@@ -899,7 +858,10 @@ fn hdrfix(input_filename: &Path, output_filename: &Path, args: &ArgMatches) -> R
     let options = Options {
         scale,
         hdr_max,
-        saturation: args.value_of("saturation").expect("saturation arg").parse()?,
+        saturation: args
+            .value_of("saturation")
+            .expect("saturation arg")
+            .parse()?,
         tone_map: match args.value_of("tone-map").expect("tone-map arg") {
             "linear" => tonemap_linear,
             "reinhard" => tonemap_reinhard_oklab,
@@ -907,13 +869,13 @@ fn hdrfix(input_filename: &Path, output_filename: &Path, args: &ArgMatches) -> R
             "aces" => tonemap_aces,
             "uncharted2" => tonemap_uncharted2,
             "hable" => tonemap_hable,
-            _ => unreachable!("bad tone-map option")
+            _ => unreachable!("bad tone-map option"),
         },
         color_map: match args.value_of("color-map").expect("color-map arg") {
             "clip" => color_clip,
             "darken" => color_darken_oklab,
             "desaturate" => color_desat_oklab,
-            _ => unreachable!("bad color-map option")
+            _ => unreachable!("bad color-map option"),
         },
     };
 
@@ -924,19 +886,32 @@ fn hdrfix(input_filename: &Path, output_filename: &Path, args: &ArgMatches) -> R
     })?;
 
     // apply histogram expansion and color gamut correction to output
-    let mut lazy_histogram = Lazy::new(|| {
-        time_func("levels histogram", || Ok(Histogram::new(&tone_mapped))).unwrap()
-    });
-    let post_levels_min = lazy_histogram.level(Level::with_str(args.value_of("post-levels-min").expect("post-levels-min arg"))?);
-    let post_levels_max = lazy_histogram.level(Level::with_str(args.value_of("post-levels-max").expect("post-levels-max arg"))?);
-    let post_gamma: f32 = args.value_of("post-gamma").expect("post-gamma arg").parse()?;
+    let mut lazy_histogram =
+        Lazy::new(|| time_func("levels histogram", || Ok(Histogram::new(&tone_mapped))).unwrap());
+    let post_levels_min = lazy_histogram.level(Level::with_str(
+        args.value_of("post-levels-min")
+            .expect("post-levels-min arg"),
+    )?);
+    let post_levels_max = lazy_histogram.level(Level::with_str(
+        args.value_of("post-levels-max")
+            .expect("post-levels-max arg"),
+    )?);
+    let post_gamma: f32 = args
+        .value_of("post-gamma")
+        .expect("post-gamma arg")
+        .parse()?;
 
     let mut dest = PixelBuffer::new(width, height, SDR8bit);
     time_func("output mapping", || {
         dest.fill(tone_mapped.pixels().map(|rgb| {
             // We have to color map again
             // in case the histogram pushed things back out of gamut.
-            clip((options.color_map)(apply_levels(rgb, post_levels_min, post_levels_max, post_gamma)))
+            clip((options.color_map)(apply_levels(
+                rgb,
+                post_levels_min,
+                post_levels_max,
+                post_gamma,
+            )))
         }));
         Ok(())
     })?;
@@ -945,8 +920,8 @@ fn hdrfix(input_filename: &Path, output_filename: &Path, args: &ArgMatches) -> R
         let ext = extension(output_filename);
         match ext {
             "png" => write_png(output_filename, &dest),
-            "jpg" | "jpeg" => write_jpeg(output_filename, &dest),
-            _ => Err(InvalidOutputFile)
+            "jpg" | "jpeg" => write_png(output_filename, &dest),
+            _ => Err(InvalidOutputFile),
         }
     })?;
 
@@ -965,7 +940,8 @@ fn run(args: &ArgMatches) -> Result<()> {
                 if let DebouncedEvent::Create(input_path) = event {
                     let ext = extension(&input_path);
                     if ext == "jxr" {
-                        let mut output_filename: OsString = input_path.file_stem().unwrap().to_os_string();
+                        let mut output_filename: OsString =
+                            input_path.file_stem().unwrap().to_os_string();
                         output_filename.push("-sdr.png");
                         let output_path = input_path.with_file_name(output_filename);
                         if !output_path.exists() {
@@ -974,10 +950,11 @@ fn run(args: &ArgMatches) -> Result<()> {
                     }
                 }
             }
-        },
+        }
         None => {
             let input_filename = Path::new(args.value_of("input").expect("input filename missing"));
-            let output_filename = Path::new(args.value_of("output").expect("output filename missing"));
+            let output_filename =
+                Path::new(args.value_of("output").expect("output filename missing"));
             hdrfix(input_filename, output_filename, args)
         }
     }

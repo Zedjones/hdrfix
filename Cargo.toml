@@ -25,11 +25,11 @@ time = "0.3.3"
 notify = "4.0.17"
 image = "0.23.14"
 # disable nasm_simd, it breaks on Windows/arm64
-mozjpeg = { version = "0.9.8", default_features = false }
+mozjpeg = { version = "0.10.10", default_features = false }
 
 # For the actual conversion code
 glam = "0.18.0"
 thiserror = "1.0.29"
 rayon = "1.5.1"
 oklab = "1.0.0"
-half = { version = "1.7.1", features = [ "std", "num-traits" ] }
+half = { version = "1.7.1", features = ["std", "num-traits"] }
