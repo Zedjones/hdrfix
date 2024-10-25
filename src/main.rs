@@ -966,7 +966,7 @@ fn run(args: &ArgMatches) -> Result<()> {
                     let ext = extension(&input_path);
                     if ext == "jxr" {
                         let mut output_filename: OsString = input_path.file_stem().unwrap().to_os_string();
-                        output_filename.push("-sdr.jpg");
+                        output_filename.push("-sdr.png");
                         let output_path = input_path.with_file_name(output_filename);
                         if !output_path.exists() {
                             hdrfix(&input_path, &output_path, args)?;
